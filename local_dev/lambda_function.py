@@ -103,9 +103,9 @@ def parse_transaction_file(json_obj, filename):
     if transaction_count != len(tx_df):
         publish_sns_message(topic, "Transaction count mismatch for block: " + filename)
 
-    convert_to_csv(tx_df, filename)
-    convert_to_csv(tx_in_df, filename + "_in")
-    convert_to_csv(tx_out_df, filename + "_out")
+    convert_to_csv(tx_df, filename, s3_bucket_path = "transaction/")
+    convert_to_csv(tx_in_df, filename + "_in", s3_bucket_path = "transaction_in/")
+    convert_to_csv(tx_out_df, filename + "_out", s3_bucket_path = "transaction_out/")
 
     return(tx_df, tx_in_df, tx_out_df)
 
@@ -147,32 +147,51 @@ def transaction_analysis(tx_df, tx_in_df, tx_out_df):
 
 def parse_block_file(json_obj, filename):
     print("Starting to parse the block file: " + filename)
+    #Some blocks have pool info, some do not
+    pool_name,pool_url = None, None
     try:
+        json_obj['poolInfo']
+        pool_name = json_obj['poolInfo']['poolName']
+        pool_url = json_obj['poolInfo']['url']
+        json_obj.pop('poolInfo')
+    except Exception as e:
+        print(e)
+        print("Pool info missing.")
+    try:
+        json_obj['poolName'] = pool_name
+        json_obj['poolUrl'] = pool_url
         txCount = (json_obj['txCount'])
         df = pd.DataFrame.from_dict(json_obj)
     except Exception as e:
         print(e)
         print("Error while processing the block file: " + filename)
     
-    convert_to_csv(df, filename)
+    s3_bucket_path = "block/"
+    convert_to_csv(df, filename, s3_bucket_path)
 
     return df, txCount
 
 
-def convert_to_csv(df, filename):
+def convert_to_csv(df, filename, s3_bucket_path):
     print("Converting " + filename + " to CSV.")
     lambda_path = "/tmp/" + filename + ".csv"
-    df.to_csv(lambda_path, encoding = "utf-8", index = False, sep='|', header=True)
+    df.to_csv(lambda_path, encoding = "utf-8", index = False, sep='|', header=False)
     print("Uploading " + filename + " to s3 bucket nydig-bi-csv-data.")
     s3 = boto3.resource("s3")
-    s3.meta.client.upload_file(lambda_path, "nydig-bi-csv-data", filename + ".csv")
+    s3.meta.client.upload_file(lambda_path, "nydig-bi-csv-data", s3_bucket_path + filename + ".csv")
 
 def get_file(event):
     s3 = boto3.client('s3')
     bucket = event['Records'][0]['s3']['bucket']['name']
     key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
 
-    filename = key.split('/', 1)[1][:-5]
+    try:
+        #if using sub-directory method
+        filename = key.split('/', 1)[1][:-5]
+    except:
+        #otherwise, files were just droped in the folder
+        filename = key[:-5]
+
     print("S3 file key: " + key)
     try:
         response = s3.get_object(Bucket=bucket, Key=key)
@@ -189,9 +208,8 @@ def publish_sns_message(topic, message, subject = "NYDIG Blockchain Project"):
         client = boto3.client('sns')
         response = client.publish(
                 TargetArn=topic,
-                Message=message,#json.dumps({'default': json.dumps(message)}),
+                Message=message,
                 Subject=subject)
-                #MessageStructure='json')
     except Exception as e:
         print(e)
         print("Error while publishing SNS message to: " + topic)
