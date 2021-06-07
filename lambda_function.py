@@ -126,15 +126,6 @@ def transaction_analysis(tx_df, tx_in_df, tx_out_df):
     #Total amount of fees as a percent of bitcoin
     sum_of_fees = tx_df['fees'].sum()
 
-    print(amount_of_transaction_ids)
-    print(amount_of_inputs)
-    print(amount_of_outputs)
-    print(btc_in)
-    print(btc_out)
-    print(btc_val_of_inputs)
-    print(btc_val_of_outputs)
-    print(sum_of_fees)
-
     message = "Amount of transactions: {} \n \
     Amount of transaction inputs: {} \n \
     Amount of transaction outputs: {} \n \
@@ -166,8 +157,7 @@ def parse_block_file(json_obj, filename):
         print(e)
         print("Error while processing the block file: " + filename)
     
-    s3_bucket_path = "block/"
-    convert_to_csv(df, filename, s3_bucket_path)
+    convert_to_csv(df, filename, s3_bucket_path = "block/")
 
     return df, txCount
 
